@@ -1,0 +1,270 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Biomedical Literature Analyst</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 0 16px;
+      line-height: 1.5;
+      background: #f7f8fb;
+      color: #1f2937;
+    }
+
+    textarea, input, button {
+      width: 100%;
+      box-sizing: border-box;
+      margin-top: 8px;
+    }
+
+    textarea {
+      min-height: 140px;
+      padding: 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      resize: vertical;
+    }
+
+    input[type="number"] {
+      padding: 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .card {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 14px;
+      padding: 18px;
+      margin-top: 18px;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.05);
+    }
+
+    .muted {
+      color: #666;
+      font-size: 0.95rem;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    button {
+      padding: 12px;
+      border: 0;
+      border-radius: 10px;
+      background: #0f9ed5;
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 16px;
+    }
+
+    button:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+    }
+
+    .error {
+      color: #b91c1c;
+      margin-top: 12px;
+      white-space: pre-wrap;
+    }
+
+    .success {
+      color: #166534;
+      margin-top: 12px;
+    }
+
+    pre {
+      white-space: pre-wrap;
+      background: #fafafa;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 14px;
+    }
+
+    label {
+      font-weight: 600;
+    }
+
+    @media (max-width: 700px) {
+      .row {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>Biomedical Literature Analyst</h1>
+  <p class="muted">
+    Ask a biomedical literature question, choose retrieval settings, and get a structured answer with citations.
+  </p>
+
+  <div class="card">
+    <label for="question">Question</label>
+    <textarea
+      id="question"
+    ></textarea>
+
+    <div class="row">
+      <div>
+        <label for="maxPapers">Number of papers</label>
+        <input id="maxPapers" type="number" min="1" value="8" />
+      </div>
+      <div>
+        <label for="searchYears">Years to search</label>
+        <input id="searchYears" type="number" min="1" value="10" />
+      </div>
+    </div>
+
+    <label style="display:block; margin-top:14px;">
+      <input id="fullText" type="checkbox" checked />
+      Try full-text retrieval
+    </label>
+
+    <button id="runBtn">Run Analysis</button>
+    <p id="status" class="muted"></p>
+    <p id="error" class="error"></p>
+  </div>
+
+  <div id="resultCard" class="card hidden">
+    <h2>Answer</h2>
+    <pre id="answer"></pre>
+
+    <h3>Citations</h3>
+    <ul id="citations"></ul>
+  </div>
+
+  <script src="config.js"></script>
+  <script>
+    const questionEl = document.getElementById('question');
+    const maxPapersEl = document.getElementById('maxPapers');
+    const searchYearsEl = document.getElementById('searchYears');
+    const fullTextEl = document.getElementById('fullText');
+    const runBtn = document.getElementById('runBtn');
+    const statusEl = document.getElementById('status');
+    const errorEl = document.getElementById('error');
+    const resultCardEl = document.getElementById('resultCard');
+    const answerEl = document.getElementById('answer');
+    const citationsEl = document.getElementById('citations');
+
+    function setLoading(isLoading) {
+      runBtn.disabled = isLoading;
+      runBtn.textContent = isLoading ? 'Running...' : 'Run Analysis';
+    }
+
+    function clearOutput() {
+      errorEl.textContent = '';
+      statusEl.textContent = '';
+      answerEl.textContent = '';
+      citationsEl.innerHTML = '';
+      resultCardEl.classList.add('hidden');
+    }
+
+    async function loadSettings() {
+      try {
+        const res = await fetch(`${window.APP_CONFIG.apiBaseUrl}/settings`);
+        if (!res.ok) {
+          throw new Error(`Settings request failed: ${res.status}`);
+        }
+
+        const s = await res.json();
+
+        maxPapersEl.max = s.max_allowed_papers;
+        maxPapersEl.value = s.default_max_papers;
+
+        searchYearsEl.max = s.max_allowed_search_years;
+        searchYearsEl.value = s.default_search_years;
+
+        fullTextEl.checked = s.allow_fulltext;
+        fullTextEl.disabled = !s.allow_fulltext;
+
+        statusEl.textContent = 'Settings loaded.';
+      } catch (err) {
+        statusEl.textContent = '';
+        errorEl.textContent = `Could not load backend settings. ${err.message}`;
+      }
+    }
+
+    function renderCitations(citations) {
+      citationsEl.innerHTML = '';
+
+      for (const c of citations || []) {
+        const li = document.createElement('li');
+        const a = document.createElement('a');
+        a.href = c.url;
+        a.textContent = `${c.title} (${c.year})`;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        li.appendChild(a);
+        citationsEl.appendChild(li);
+      }
+    }
+
+    async function runAnalysis() {
+      clearOutput();
+
+      const question = questionEl.value.trim();
+      if (!question) {
+        errorEl.textContent = 'Please enter a question before running analysis.';
+        return;
+      }
+
+      const payload = {
+        question,
+        max_papers: Number(maxPapersEl.value),
+        search_years: Number(searchYearsEl.value),
+        full_text: fullTextEl.checked
+      };
+
+      try {
+        setLoading(true);
+        statusEl.textContent = 'Running analysis... this may take a little while.';
+
+        const res = await fetch(`${window.APP_CONFIG.apiBaseUrl}/analyze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          const detail =
+            typeof data.detail === 'string'
+              ? data.detail
+              : JSON.stringify(data.detail || data);
+          throw new Error(detail || `Request failed with status ${res.status}`);
+        }
+
+        statusEl.textContent =
+          `Done. Max papers used: ${data.max_papers_used}. ` +
+          `Search years used: ${data.search_years_used}. ` +
+          `Full text used: ${data.full_text_used}.`;
+
+        answerEl.textContent = data.answer || '';
+        renderCitations(data.citations || []);
+        resultCardEl.classList.remove('hidden');
+      } catch (err) {
+        errorEl.textContent = err.message || 'Something went wrong.';
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    runBtn.addEventListener('click', runAnalysis);
+    loadSettings();
+  </script>
+</body>
+</html>
