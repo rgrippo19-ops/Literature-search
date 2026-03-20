@@ -276,10 +276,7 @@
 
     <div class="card no-print">
       <label class="label" for="question">Question</label>
-      <textarea
-        id="question"
-        placeholder="Example: Summarize recent evidence on dopamine involvement in circadian entrainment and distinguish rodent versus human findings."
-      ></textarea>
+      <textarea id="question"></textarea>
 
       <div class="controls-grid">
         <div class="field">
@@ -361,7 +358,6 @@
 
     const apiBaseUrl = window.APP_CONFIG?.apiBaseUrl || "http://127.0.0.1:8000";
 
-    let lastPayload = null;
     let lastResponse = null;
 
     function setLoading(isLoading) {
@@ -383,8 +379,6 @@
       fullTextUsedPill.classList.add('hidden');
 
       printPdfBtn.disabled = true;
-
-      lastPayload = null;
       lastResponse = null;
     }
 
@@ -418,14 +412,11 @@
       }
     }
 
-
     function cleanReportText(text) {
       return (text || '')
         .replace(/\*\*(.*?)\*\*/g, '$1')
         .replace(/\*(.*?)\*/g, '$1')
-        .replace(/
-/g, '
-');
+        .replace(/\r\n/g, '\n');
     }
 
     function escapeHtml(text) {
@@ -438,11 +429,8 @@
     function formatPlainTextForPrint(text) {
       const cleaned = cleanReportText(text);
       return escapeHtml(cleaned)
-        .split(/
-\s*
-/)
-        .map(paragraph => `<p>${paragraph.replace(/
-/g, '<br>')}</p>`)
+        .split(/\n\s*\n/)
+        .map(paragraph => `<p>${paragraph.replace(/\n/g, '<br>')}</p>`)
         .join('');
     }
 
@@ -516,8 +504,6 @@
         search_years: Number(searchYearsEl.value),
         full_text: fullTextEl.checked
       };
-
-      lastPayload = payload;
 
       try {
         setLoading(true);
@@ -603,8 +589,6 @@
       `;
     }
 
-
-
     runBtn.addEventListener('click', runAnalysis);
     clearBtn.addEventListener('click', resetForm);
 
@@ -624,7 +608,6 @@
         printWindow.print();
       };
     });
-
 
     loadSettings();
   </script>
